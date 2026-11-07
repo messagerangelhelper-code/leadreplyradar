@@ -24,6 +24,7 @@ export async function GET(request) {
     const data = await readAllMail();
     return NextResponse.json({ mode: 'live', ...data });
   } catch (e) {
+    console.error('LeadReplyRadar mail error: ' + String(e.message || e));
     return NextResponse.json({ mode: 'live', items: [], accounts: [], error: String(e.message || e) }, { status: 500 });
   }
 }
