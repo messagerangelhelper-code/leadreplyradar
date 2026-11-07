@@ -51,7 +51,6 @@ function scoreClass(s) {
   if (s >= 30) return 'score-low';
   return 'score-cold';
 }
-
 // ---------- sound ----------
 let audioCtx = null;
 function beep(times = 1) {
@@ -72,7 +71,6 @@ function beep(times = 1) {
   }
   return true;
 }
-
 // ---------- pieces ----------
 function Radar({ dots }) {
   return (
@@ -96,7 +94,6 @@ function Radar({ dots }) {
     </div>
   );
 }
-
 function Tags({ tags }) {
   return (
     <div className="tags">
@@ -108,7 +105,6 @@ function Tags({ tags }) {
     </div>
   );
 }
-
 function MailCard({ m, open, onOpen }) {
   return (
     <div className={'card mail' + (m.score >= 80 ? ' mail-hot' : '')} onClick={() => onOpen(m.id)}>
@@ -150,7 +146,6 @@ function MailCard({ m, open, onOpen }) {
     </div>
   );
 }
-
 function BarChart({ days }) {
   const max = Math.max(1, ...days.map((d) => d.count));
   const best = days.reduce((a, b) => (b.count > a.count ? b : a), days[0]);
@@ -179,7 +174,6 @@ function BarChart({ days }) {
     </div>
   );
 }
-
 // ---------- page ----------
 export default function Home() {
   const [tab, setTab] = useState('radar');
@@ -197,19 +191,16 @@ export default function Home() {
   const [newHot, setNewHot] = useState([]);
   const [loading, setLoading] = useState(false);
   const known = useRef(null);
-
   useEffect(() => {
     setSettings({ ...DEFAULT_SETTINGS, ...load('lrr_settings', {}) });
     setAcked(load('lrr_acked', []));
     known.current = load('lrr_known', null);
   }, []);
-
   const updateSettings = (patch) => {
     const next = { ...settings, ...patch };
     setSettings(next);
     save('lrr_settings', next);
   };
-
   const fetchMail = useCallback(async () => {
     setLoading(true);
     try {
@@ -221,7 +212,6 @@ export default function Home() {
       const json = await res.json();
       setNeedLogin(false);
       setData(json);
-
       // Find emails we haven't seen before.
       const ids = (json.items || []).map((m) => m.id);
       if (known.current === null) {
@@ -241,46 +231,22 @@ export default function Home() {
       }
       save('lrr_known', known.current);
     } catch (e) {
-      // keep last data on screen
+      // Show the problem instead of staying on Loading.
+      setData((prev) => prev || { mode: 'live', items: [], accounts: [], error: 'Could not reach your mail yet. Pull down to refresh in a minute.' });
     } finally {
       setLoading(false);
     }
   }, [settings.beepAll, settings.popups]);
-
   useEffect(() => {
     fetchMail();
   }, [fetchMail]);
-
   useEffect(() => {
     if (paused) return undefined;
     const t = setInterval(fetchMail, POLL_MS);
     return () => clearInterval(t);
   }, [fetchMail, paused]);
-
   // Keep beeping for urgent mail until you look at it.
   const waiting = newHot.filter((id) => !acked.includes(id));
-  useEffect(() => {
-    if (!soundOn || !settings.repeatHot || waiting.length === 0) return undefined;
-    const t = setInterval(() => beep(3), REPEAT_MS);
-    return () => clearInterval(t);
-  }, [soundOn, settings.repeatHot, waiting.length]);
-
-  const acknowledge = (ids) => {
-    const next = [...new Set([...acked, ...ids])].slice(-1000);
-    setAcked(next);
-    save('lrr_acked', next);
-  };
-
-  const openMail = (id) => {
-    setOpenId(openId === id ? null : id);
-    acknowledge([id]);
-  };
-
-  const goInbox = () => {
-    setTab('inbox');
-    acknowledge(newHot);
-  };
-
   const turnOnSound = () => {
     try {
       audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
@@ -289,13 +255,11 @@ export default function Home() {
       beep(1);
     } catch (e) {}
   };
-
   const askPopups = async () => {
     if (typeof Notification === 'undefined') return;
     const p = await Notification.requestPermission();
     updateSettings({ popups: p === 'granted' });
   };
-
   const login = async (e) => {
     e.preventDefault();
     setLoginError('');
@@ -312,15 +276,12 @@ export default function Home() {
       setLoginError(j.error || 'Could not sign in.');
     }
   };
-
   const logout = async () => {
     await fetch('/api/login', { method: 'DELETE' });
     setData(null);
     setNeedLogin(true);
   };
-
   const items = (data && data.items) || [];
-
   const sorted = useMemo(
     () =>
       [...items].sort((a, b) => {
@@ -331,7 +292,6 @@ export default function Home() {
       }),
     [items]
   );
-
   const shown = sorted.filter((m) => {
     if (filter === 'Hot' && m.score < 80) return false;
     if (filter !== 'All' && filter !== 'Hot' && !m.tags.includes(filter)) return false;
@@ -341,7 +301,6 @@ export default function Home() {
     }
     return true;
   });
-
   const stats = useMemo(() => {
     const hot = items.filter((m) => m.score >= 80);
     return {
@@ -353,7 +312,6 @@ export default function Home() {
       hotUnread: hot.filter((m) => m.unread).length,
     };
   }, [items]);
-
   const days = useMemo(() => {
     const out = [];
     for (let i = 6; i >= 0; i--) {
@@ -371,7 +329,6 @@ export default function Home() {
     });
     return out;
   }, [items]);
-
   const dots = useMemo(
     () =>
       items.slice(0, 24).map((m, i) => {
@@ -381,7 +338,6 @@ export default function Home() {
       }),
     [items]
   );
-
   if (needLogin) {
     return (
       <main className="wrap center">
@@ -395,7 +351,6 @@ export default function Home() {
       </main>
     );
   }
-
   return (
     <main className="wrap">
       <header className="topbar">
@@ -409,25 +364,24 @@ export default function Home() {
         </div>
         <span className="unread-pill">{stats.unread} unread</span>
       </header>
-
       {!soundOn && (
         <button className="btn btn-orange full" onClick={turnOnSound}>
           🔔 Turn on sound alerts
         </button>
       )}
-
       {waiting.length > 0 && (
         <button className="alert-banner" onClick={goInbox}>
           {waiting.length} urgent email{waiting.length > 1 ? 's' : ''} need{waiting.length > 1 ? '' : 's'} you. Tap to view.
         </button>
       )}
-
       {data && data.mode === 'demo' && (
         <div className="card note small">
           Showing sample emails. {data.setup}
         </div>
       )}
-
+      {data && data.error && (
+        <div className="card note error small">{data.error}</div>
+      )}
       {data && data.accounts && data.accounts.some((a) => !a.ok) && (
         <div className="card note error small">
           {data.accounts
@@ -436,7 +390,6 @@ export default function Home() {
             .join(' · ')}
         </div>
       )}
-
       {tab === 'radar' && (
         <section>
           <Radar dots={dots} />
@@ -455,7 +408,6 @@ export default function Home() {
           ))}
         </section>
       )}
-
       {tab === 'inbox' && (
         <section>
           <div className="toolbar">
@@ -476,7 +428,6 @@ export default function Home() {
           ))}
         </section>
       )}
-
       {tab === 'analytics' && (
         <section>
           <h2>Email activity</h2>
@@ -490,7 +441,6 @@ export default function Home() {
           </div>
         </section>
       )}
-
       {tab === 'alerts' && (
         <section>
           <h2>Alerts</h2>
@@ -517,7 +467,6 @@ export default function Home() {
           )}
         </section>
       )}
-
       {tab === 'tools' && (
         <section>
           <h2>More tools</h2>
@@ -531,7 +480,6 @@ export default function Home() {
           </div>
         </section>
       )}
-
       <nav className="bottomnav">
         {[
           ['radar', 'Radar', '◎'],
@@ -549,7 +497,6 @@ export default function Home() {
     </main>
   );
 }
-
 function Toggle({ label, on, onChange, soon }) {
   return (
     <div className="toggle-row">
