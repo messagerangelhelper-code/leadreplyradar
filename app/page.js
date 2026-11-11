@@ -428,7 +428,14 @@ export default function Home() {
         if (fresh.length) {
           const hot = fresh.filter((m) => m.score >= 80);
           if (hot.length) setNewHot((prev) => [...new Set([...prev, ...hot.map((m) => m.id)])]);
-          if (settings.beepAll || hot.length) beep(hot.length ? 3 : 1);
+          if (settings.beepAll || hot.length) {
+            const rang = beep(hot.length ? 3 : 1);
+            if (!rang) {
+              // Sound is still locked: show the orange "Turn on sound" button and buzz the phone.
+              setSoundOn(false);
+              if (navigator.vibrate) navigator.vibrate(hot.length ? [300, 150, 300, 150, 300] : 300);
+            }
+          }
           if (settings.popups && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
             const top = hot[0] || fresh[0];
             new Notification((hot.length ? 'Urgent email: ' : 'New email: ') + top.fromName, { body: top.subject });
@@ -487,6 +494,34 @@ export default function Home() {
       beep(1);
     } catch (e) {}
   };
+
+  // Browsers only allow sound after you touch the page. Unlock it on the
+  // first tap, click or key press anywhere, so new mail can ring without
+  // pressing the button. Wake it again when you come back to this tab.
+  useEffect(() => {
+    const unlock = () => {
+      try {
+        audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state !== 'running') audioCtx.resume();
+        setSoundOn(true);
+      } catch (e) {}
+    };
+    const wake = () => {
+      if (document.visibilityState === 'visible' && audioCtx && audioCtx.state !== 'running') {
+        audioCtx.resume().catch(() => {});
+      }
+    };
+    window.addEventListener('pointerdown', unlock, true);
+    window.addEventListener('keydown', unlock, true);
+    window.addEventListener('touchstart', unlock, true);
+    document.addEventListener('visibilitychange', wake);
+    return () => {
+      window.removeEventListener('pointerdown', unlock, true);
+      window.removeEventListener('keydown', unlock, true);
+      window.removeEventListener('touchstart', unlock, true);
+      document.removeEventListener('visibilitychange', wake);
+    };
+  }, []);
 
   const askPopups = async () => {
     if (typeof Notification === 'undefined') return;
