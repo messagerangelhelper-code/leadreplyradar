@@ -448,7 +448,9 @@ export default function Home() {
           const hot = fresh.filter((m) => m.score >= 80);
           if (hot.length) setNewHot((prev) => [...new Set([...prev, ...hot.map((m) => m.id)])]);
           if (settings.beepAll || hot.length) {
-            const rang = beep(hot.length ? 3 : 1);
+            const rounds = hot.length ? 3 : 2; // urgent: 3 rounds of 4 beeps; other new mail: 2 rounds
+            const rang = beep(4);
+            if (rang) for (let r = 1; r < rounds; r++) setTimeout(() => beep(4), r * 1800);
             if (!rang) {
               // Sound is still locked: show the orange "Turn on sound" button and buzz the phone.
               setSoundOn(false);
