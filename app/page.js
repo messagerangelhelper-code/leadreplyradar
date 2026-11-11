@@ -27,7 +27,7 @@ const TOPIC_FILTER = {
   'Meeting requests': ['meeting'],
   'Waiting on you': ['follow_up'],
 };
-const DEFAULT_SETTINGS = { beepAll: true, repeatHot: true, popups: false };
+const DEFAULT_SETTINGS = { volume: 0.6, beepAll: true, repeatHot: true, popups: false };
 
 function load(key, fallback) {
   try {
@@ -68,8 +68,10 @@ function scoreClass(s) {
 
 // ---------- sound ----------
 let audioCtx = null;
+let beepVol = 0.6; // 0 = off, 0.25 = low, 0.6 = loud
 function beep(times = 1) {
   if (!audioCtx) return false;
+  if (beepVol <= 0) return true;
   if (audioCtx.state === 'suspended') audioCtx.resume();
   for (let i = 0; i < times; i++) {
     const t = audioCtx.currentTime + i * 0.28;
@@ -78,7 +80,7 @@ function beep(times = 1) {
     osc.type = 'square';
     osc.frequency.value = i % 2 ? 660 : 880;
     gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.exponentialRampToValueAtTime(0.25, t + 0.02);
+    gain.gain.exponentialRampToValueAtTime(beepVol, t + 0.02);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
     osc.connect(gain).connect(audioCtx.destination);
     osc.start(t);
@@ -401,6 +403,23 @@ export default function Home() {
     known.current = load('lrr_known', null);
   }, []);
 
+  useEffect(() => {
+    beepVol = typeof settings.volume === 'number' ? settings.volume : 0.6;
+  }, [settings.volume]);
+
+  // Volume button: Loud -> Low -> Off -> Loud. Plays a test beep so you can hear it.
+  const cycleVolume = () => {
+    const v = typeof settings.volume === 'number' ? settings.volume : 0.6;
+    const next = v >= 0.6 ? 0.25 : v > 0 ? 0 : 0.6;
+    beepVol = next;
+    updateSettings({ volume: next });
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      setSoundOn(true);
+      Promise.resolve(audioCtx.resume()).then(() => beep(1)).catch(() => beep(1));
+    } catch (e) {}
+  };
+
   const updateSettings = (patch) => {
     const next = { ...settings, ...patch };
     setSettings(next);
@@ -489,9 +508,8 @@ export default function Home() {
   const turnOnSound = () => {
     try {
       audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-      audioCtx.resume();
       setSoundOn(true);
-      beep(1);
+      Promise.resolve(audioCtx.resume()).then(() => beep(1)).catch(() => beep(1));
     } catch (e) {}
   };
 
@@ -815,7 +833,7 @@ export default function Home() {
           )}
           <div className="toolbar">
             <button className="icon-btn" onClick={fetchMail} title="Refresh">{loading ? '…' : '↻'}</button>
-            <button className="icon-btn" onClick={() => setPaused(!paused)} title={paused ? 'Resume' : 'Pause'}>{paused ? '▶' : '❚❚'}</button>
+            <button className="icon-btn" onClick={cycleVolume} title="Beep volume: tap to change">{(settings.volume ?? 0.6) >= 0.6 ? '🔊' : (settings.volume ?? 0.6) > 0 ? '🔉' : '🔇'}</button>
             <input className="search" placeholder="Search emails" value={query} onChange={(e) => setQuery(e.target.value)} />
           </div>
           {aiOn && (
