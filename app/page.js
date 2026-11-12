@@ -639,6 +639,7 @@ export default function Home() {
   const [query, setQuery] = useState('');
   const [openId, setOpenId] = useState(null);
   const [soundOn, setSoundOn] = useState(false);
+  const [soundCheck, setSoundCheck] = useState('');
   const [paused, setPaused] = useState(false);
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [acked, setAcked] = useState([]);
@@ -1292,9 +1293,28 @@ export default function Home() {
             <Toggle label="SMS alerts" soon />
             <Toggle label="Call alerts" soon />
           </div>
-          <button className="btn btn-blue full" onClick={() => { setSoundOn(true); beep(4); }}>
+          <button
+            className="btn btn-blue full"
+            onClick={() => {
+              setSoundOn(true);
+              const saved = beepVol;
+              if (beepVol <= 0) beepVol = 0.6; // the test always plays, even when the speaker is set to Off
+              beep(4);
+              playClip();
+              beepVol = saved;
+              setTimeout(() => {
+                setSoundCheck(
+                  'Sound check: speaker ' + (saved >= 0.6 ? 'Loud' : saved > 0 ? 'Low' : 'OFF (tap 🔇 at the top to turn it on)') +
+                    ' · audio ' + (audioCtx ? audioCtx.state : 'not started') +
+                    ' · tapped ' + (navigator.userActivation ? (navigator.userActivation.hasBeenActive ? 'yes' : 'no') : 'unknown') +
+                    (window.self !== window.top ? ' · inside CashCow Mail' : ' · own page')
+                );
+              }, 400);
+            }}
+          >
             Send test alert
           </button>
+          {soundCheck && <p className="muted small">{soundCheck}</p>}
           <p className="muted small">
             Hot means a score of 80 or more: deadlines, account notices, payment problems, or someone replying to you.
             Checks your inbox every minute while this page is open.
