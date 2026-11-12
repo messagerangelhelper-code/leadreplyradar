@@ -633,6 +633,13 @@ export default function Home() {
   const [loginEmail, setLoginEmail] = useState('');
   const [loginNote, setLoginNote] = useState('');
   const [resetToken, setResetToken] = useState('');
+  // The owner sign-in link shows only at leadreplyradar.onrender.com/?owner
+  const [ownerLink, setOwnerLink] = useState(false);
+  useEffect(() => {
+    try {
+      setOwnerLink(new URLSearchParams(window.location.search).has('owner'));
+    } catch (e) {}
+  }, []);
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [filter, setFilter] = useState('All');
@@ -1053,13 +1060,14 @@ export default function Home() {
 
   if (needLogin) {
     const titles = { in: 'Sign in', up: 'Create your account', forgot: 'Reset your password', reset: 'Set a new password' };
+    const go = (m) => { setLoginError(''); setLoginNote(''); setLoginMode(m); };
     return (
       <main className="wrap center">
         <form className="card login" onSubmit={custSubmit}>
-          <h1>LeadReplyRadar</h1>
-          <p className="muted">{titles[loginMode]}</p>
+          <h1 style={{ margin: 0 }}>LeadReplyRadar</h1>
+          <p className="muted" style={{ margin: 0 }}>{titles[loginMode]}</p>
           {loginMode !== 'reset' && (
-            <input type="email" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} placeholder="Email" autoComplete="email" autoFocus required />
+            <input type="email" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} placeholder="Email" autoComplete="email" required />
           )}
           {loginMode !== 'forgot' && (
             <input
@@ -1071,18 +1079,28 @@ export default function Home() {
               required
             />
           )}
-          {loginError && <p className="error small">{loginError}</p>}
-          {loginNote && <p className="small" style={{ color: '#3ccf8e' }}>{loginNote}</p>}
+          {loginError && <p className="error small" style={{ margin: 0 }}>{loginError}</p>}
+          {loginNote && <p className="small" style={{ margin: 0, color: '#3ccf8e' }}>{loginNote}</p>}
           <button className="btn btn-orange" type="submit">
-            {loginMode === 'in' ? 'Sign in' : loginMode === 'up' ? 'Create account' : loginMode === 'forgot' ? 'Send reset link' : 'Save password'}
+            {loginMode === 'in' ? 'Sign in' : loginMode === 'up' ? 'Start my free trial' : loginMode === 'forgot' ? 'Send reset link' : 'Save password'}
           </button>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'center', marginTop: 10 }}>
-            {loginMode !== 'in' && <button type="button" className="link small" onClick={() => { setLoginError(''); setLoginMode('in'); }}>Sign in</button>}
-            {loginMode !== 'up' && <button type="button" className="link small" onClick={() => { setLoginError(''); setLoginNote(''); setLoginMode('up'); }}>New here? Create an account</button>}
-            {loginMode === 'in' && <button type="button" className="link small" onClick={() => { setLoginError(''); setLoginNote(''); setLoginMode('forgot'); }}>Forgot password?</button>}
-          </div>
-          <p className="muted small" style={{ marginTop: 14 }}>Uses your CashCow account. Every plan starts with a 14-day free trial.</p>
-          <button type="button" className="link small" style={{ opacity: 0.6 }} onClick={() => { setLoginError(''); setPassword(''); setLoginMode('owner'); }}>Owner sign in</button>
+          <p className="small muted" style={{ margin: 0, textAlign: 'center' }}>
+            {loginMode === 'in' ? (
+              <>
+                New here? <button type="button" className="link small" onClick={() => go('up')}>Create an account</button>
+                {' · '}
+                <button type="button" className="link small" onClick={() => go('forgot')}>Forgot password?</button>
+              </>
+            ) : (
+              <>
+                {loginMode === 'up' ? 'Have an account? ' : ''}
+                <button type="button" className="link small" onClick={() => go('in')}>Back to sign in</button>
+              </>
+            )}
+          </p>
+          {ownerLink && (
+            <button type="button" className="link small" style={{ opacity: 0.6 }} onClick={() => { setPassword(''); go('owner'); }}>Owner sign in</button>
+          )}
         </form>
       </main>
     );
