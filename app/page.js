@@ -95,7 +95,13 @@ const PLANS = [
   { name: 'Pro', price: 29, for: 'Busy inboxes that need fast replies all day', url: 'https://buy.stripe.com/bJefZj6Ug6lX8hb7XPak004' },
   { name: 'Business', price: 49, for: 'Teams and heavy email users', url: 'https://buy.stripe.com/5kQ28t3I4h0B40V5PHak005' },
 ];
-function Plans() {
+function planLink(p, email, userId) {
+  if (!email) return p.url;
+  const q = new URLSearchParams({ prefilled_email: email });
+  if (userId) q.set('client_reference_id', userId);
+  return p.url + '?' + q.toString();
+}
+function Plans({ email }) {
   return (
     <div className="card" id="plans" style={{ marginTop: 14 }}>
       <h3 style={{ marginTop: 0 }}>Plans</h3>
@@ -107,9 +113,108 @@ function Plans() {
             <span><strong style={{ fontSize: 22 }}>${p.price}</strong><span className="muted small"> / month</span></span>
           </div>
           <p className="muted small" style={{ margin: '4px 0 10px' }}>{p.for}</p>
-          <a className="btn btn-blue full" href={p.url} target="_blank" rel="noopener noreferrer">Start free trial</a>
+          <a className="btn btn-blue full" href={planLink(p, email)} target="_blank" rel="noopener noreferrer">Start free trial</a>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ---------- customer: connect your inbox ----------
+const PROVIDER_HELP = {
+  gmail: { label: 'Gmail', help: 'Turn on 2-Step Verification, then make an app password at myaccount.google.com/apppasswords.', link: 'https://myaccount.google.com/apppasswords' },
+  outlook: { label: 'Outlook / Hotmail / Microsoft 365', help: 'Make an app password at account.microsoft.com → Security → Advanced security options. Some work accounts block this; ask your IT team.', link: 'https://account.microsoft.com/security' },
+  yahoo: { label: 'Yahoo Mail', help: 'Yahoo Account security → Generate app password.', link: 'https://login.yahoo.com/account/security' },
+  icloud: { label: 'iCloud Mail', help: 'appleid.apple.com → Sign-In and Security → App-Specific Passwords.', link: 'https://appleid.apple.com' },
+  aol: { label: 'AOL Mail', help: 'AOL Account security → Generate app password.', link: 'https://login.aol.com/account/security' },
+  zoho: { label: 'Zoho Mail', help: 'Zoho Accounts → Security → App passwords. IMAP must be on in Zoho Mail settings.', link: 'https://accounts.zoho.com' },
+};
+
+function ConnectInbox({ onDone, current }) {
+  const [provider, setProvider] = useState('gmail');
+  const [email, setEmail] = useState(current || '');
+  const [pass, setPass] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const p = PROVIDER_HELP[provider];
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    setMsg('Checking your inbox sign-in…');
+    try {
+      const res = await apiFetch('/api/account', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, email, pass }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) throw new Error(j.error || 'Could not connect. Try again.');
+      setPass('');
+      setMsg('');
+      onDone && onDone();
+    } catch (err) {
+      setMsg(String(err.message || err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form className="card" onSubmit={submit}>
+      <h2 style={{ marginTop: 0 }}>{current ? 'Change your inbox' : 'Connect your inbox'}</h2>
+      <p className="small">LeadReplyRadar reads your inbox only to score and sort it. It never deletes mail, marks it read, or sends anything on its own.</p>
+      <label className="small muted">Email provider</label>
+      <select value={provider} onChange={(e) => setProvider(e.target.value)} style={{ width: '100%', marginBottom: 10 }}>
+        {Object.entries(PROVIDER_HELP).map(([id, x]) => (
+          <option key={id} value={id}>{x.label}</option>
+        ))}
+      </select>
+      <label className="small muted">Email address</label>
+      <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" required autoComplete="email" />
+      <label className="small muted">App password (not your normal password)</label>
+      <input type="password" value={pass} onChange={(e) => setPass(e.target.value)} placeholder="16-character app password" required autoComplete="off" />
+      <p className="muted small">
+        {p.help}{' '}
+        <a href={p.link} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>Open</a>
+      </p>
+      <p className="muted small">Your app password is stored encrypted and is never shown again. Disconnect any time to delete it.</p>
+      <button className="btn btn-blue full" type="submit" disabled={busy}>{busy ? 'Connecting…' : 'Connect inbox'}</button>
+      {msg && <p className={busy ? 'muted small' : 'error small'}>{msg}</p>}
+    </form>
+  );
+}
+
+function CustomerBox({ customer, onChanged }) {
+  const [changing, setChanging] = useState(false);
+  const [msg, setMsg] = useState('');
+  const plan = customer.plan || {};
+  const until = (t) => new Date(t * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const disconnect = async () => {
+    if (!window.confirm('Disconnect ' + customer.inbox + '? Your saved app password is deleted.')) return;
+    const res = await apiFetch('/api/account', { method: 'DELETE' });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok || !j.ok) return setMsg(j.error || 'Could not disconnect. Try again.');
+    onChanged && onChanged();
+  };
+  return (
+    <div className="card" style={{ marginTop: 14 }}>
+      <h3 style={{ marginTop: 0 }}>Your account</h3>
+      <p className="small" style={{ margin: '4px 0' }}>Signed in as <strong>{customer.email}</strong></p>
+      <p className="small" style={{ margin: '4px 0' }}>Inbox: <strong>{customer.inbox}</strong></p>
+      <p className="small" style={{ margin: '4px 0' }}>
+        Plan: <strong>{plan.plan || 'none'}</strong>
+        {plan.status === 'trialing' && plan.trial_end ? ' (free trial until ' + until(plan.trial_end) + ')' : ''}
+        {plan.cancel_at_period_end ? ' · set to cancel' : ''}
+      </p>
+      {changing ? (
+        <ConnectInbox current={customer.inbox} onDone={() => { setChanging(false); onChanged && onChanged(); }} />
+      ) : (
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 8 }}>
+          <button className="btn btn-blue" onClick={() => setChanging(true)}>Change inbox</button>
+          <button className="link small" onClick={disconnect}>Disconnect inbox</button>
+        </div>
+      )}
+      {msg && <p className="error small">{msg}</p>}
+      <p className="muted small" style={{ marginTop: 10 }}>To change or cancel your plan, contact CashCow support.</p>
     </div>
   );
 }
@@ -164,9 +269,69 @@ function setToken(t) {
     else localStorage.removeItem('lrr_token');
   } catch (e) {}
 }
-function apiFetch(url, opts = {}) {
+// ---------- customer accounts (CashCow sign-in, same accounts as PlateTrace) ----------
+const SB_URL = 'https://wbugdujmydwmzemccbiy.supabase.co';
+const SB_KEY = 'sb_publishable_4RYit1aVs5Egh3gJsx2bJA_m6Kje0ES';
+
+function getCust() {
+  try {
+    return JSON.parse(localStorage.getItem('lrr_cust') || 'null');
+  } catch (e) {
+    return null;
+  }
+}
+function setCust(sess) {
+  try {
+    if (sess) localStorage.setItem('lrr_cust', JSON.stringify(sess));
+    else localStorage.removeItem('lrr_cust');
+  } catch (e) {}
+}
+function keepSession(j) {
+  const sess = {
+    access_token: j.access_token,
+    refresh_token: j.refresh_token,
+    expires_at: j.expires_at || Math.floor(Date.now() / 1000) + (j.expires_in || 3600),
+    email: (j.user && j.user.email) || '',
+  };
+  setCust(sess);
+  return sess;
+}
+async function authCall(path, body, token) {
+  const res = await fetch(SB_URL + '/auth/v1/' + path, {
+    method: path === 'user' ? 'PUT' : 'POST',
+    headers: { apikey: SB_KEY, 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
+    body: JSON.stringify(body),
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(j.msg || j.error_description || j.message || j.error || 'Something went wrong. Try again.');
+  return j;
+}
+const custSignIn = async (email, password) => keepSession(await authCall('token?grant_type=password', { email, password }));
+const custSignUp = (email, password) =>
+  authCall('signup?redirect_to=' + encodeURIComponent(window.location.origin), { email, password });
+const custForgot = (email) => authCall('recover?redirect_to=' + encodeURIComponent(window.location.origin), { email });
+async function custToken() {
+  let sess = getCust();
+  if (!sess) return '';
+  if (sess.expires_at - 60 < Date.now() / 1000) {
+    try {
+      sess = keepSession(await authCall('token?grant_type=refresh_token', { refresh_token: sess.refresh_token }));
+    } catch (e) {
+      setCust(null);
+      return '';
+    }
+  }
+  return sess.access_token;
+}
+
+async function apiFetch(url, opts = {}) {
   const t = getToken();
-  return fetch(url, { ...opts, credentials: 'same-origin', headers: { ...(opts.headers || {}), ...(t ? { 'x-lrr-auth': t } : {}) } });
+  const c = t ? '' : await custToken();
+  return fetch(url, {
+    ...opts,
+    credentials: 'same-origin',
+    headers: { ...(opts.headers || {}), ...(t ? { 'x-lrr-auth': t } : {}), ...(c ? { 'x-lrr-user': c } : {}) },
+  });
 }
 
 function copyText(text) {
@@ -406,6 +571,12 @@ export default function Home() {
   };
   const [data, setData] = useState(null);
   const [needLogin, setNeedLogin] = useState(false);
+  // Customers: 'plan' = needs a plan, 'connect' = needs to connect an inbox, 'billing' = plan check failed.
+  const [custGate, setCustGate] = useState(null);
+  const [loginMode, setLoginMode] = useState('in'); // in | up | forgot | reset | owner
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginNote, setLoginNote] = useState('');
+  const [resetToken, setResetToken] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [filter, setFilter] = useState('All');
@@ -456,11 +627,20 @@ export default function Home() {
     try {
       const res = await apiFetch('/api/mail', { cache: 'no-store' });
       if (res.status === 401) {
+        const j = await res.json().catch(() => ({}));
+        if (j.customer) setCust(null);
         setNeedLogin(true);
+        return;
+      }
+      if (res.status === 402 || res.status === 409 || res.status === 503) {
+        const j = await res.json().catch(() => ({}));
+        setNeedLogin(false);
+        setCustGate({ kind: res.status === 402 ? 'plan' : res.status === 409 ? 'connect' : 'billing', ...j });
         return;
       }
       const json = await res.json();
       setNeedLogin(false);
+      setCustGate(null);
       setData(json);
 
       // Find emails we haven't seen before.
@@ -585,7 +765,9 @@ export default function Home() {
     if (res.ok) {
       const j = await res.json().catch(() => ({}));
       setToken(j.token || '');
+      setCust(null);
       setPassword('');
+      known.current = null;
       fetchMail();
     } else {
       const j = await res.json().catch(() => ({}));
@@ -647,11 +829,81 @@ export default function Home() {
   };
 
   const logout = async () => {
-    await apiFetch('/api/login', { method: 'DELETE' });
+    if (getToken()) await apiFetch('/api/login', { method: 'DELETE' });
     setToken('');
+    setCust(null);
     setData(null);
+    setCustGate(null);
+    known.current = null;
+    setLoginMode('in');
     setNeedLogin(true);
   };
+
+  // Customer sign in, sign up and password reset.
+  const custSubmit = async (e) => {
+    e.preventDefault();
+    setLoginError('');
+    setLoginNote('');
+    const email = loginEmail.trim().toLowerCase();
+    try {
+      if (loginMode === 'forgot') {
+        await custForgot(email);
+        setLoginNote('Check your email for a link to set a new password.');
+        return;
+      }
+      if (loginMode === 'reset') {
+        if (password.length < 8) throw new Error('Use at least 8 characters.');
+        await authCall('user', { password }, resetToken);
+        setLoginNote('Password changed. Sign in with your new password.');
+        setLoginMode('in');
+        setPassword('');
+        return;
+      }
+      if (password.length < 8) throw new Error('Use at least 8 characters for your password.');
+      if (loginMode === 'up') {
+        const j = await custSignUp(email, password);
+        if (j.access_token) keepSession(j);
+        else {
+          setLoginNote('Almost done: open the email we just sent and tap the link, then sign in here.');
+          setLoginMode('in');
+          setPassword('');
+          return;
+        }
+      } else {
+        await custSignIn(email, password);
+      }
+      setToken('');
+      setPassword('');
+      known.current = null;
+      fetchMail();
+    } catch (err) {
+      setLoginError(String(err.message || err));
+    }
+  };
+
+  // Links from CashCow emails (confirm account, reset password) land here with a token in the address.
+  useEffect(() => {
+    try {
+      const h = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+      if (!h.get('access_token')) return;
+      window.history.replaceState(window.history.state, '', window.location.pathname);
+      if (h.get('type') === 'recovery') {
+        setResetToken(h.get('access_token'));
+        setLoginMode('reset');
+        setNeedLogin(true);
+        return;
+      }
+      keepSession({
+        access_token: h.get('access_token'),
+        refresh_token: h.get('refresh_token'),
+        expires_at: Number(h.get('expires_at')) || undefined,
+        expires_in: Number(h.get('expires_in')) || 3600,
+      });
+      setToken('');
+      fetchMail();
+    } catch (e) {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const items = (data && data.items) || [];
   const aiOn = Boolean(data && data.ai && data.ai.on);
@@ -726,16 +978,86 @@ export default function Home() {
     [items]
   );
 
-  if (needLogin) {
+  if (needLogin && loginMode === 'owner') {
     return (
       <main className="wrap center">
         <form className="card login" onSubmit={login}>
           <h1>LeadReplyRadar</h1>
-          <p className="muted">Enter your dashboard password.</p>
+          <p className="muted">Owner sign in: enter your dashboard password.</p>
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" autoFocus />
           {loginError && <p className="error small">{loginError}</p>}
           <button className="btn btn-orange" type="submit">Sign in</button>
+          <button type="button" className="link small" onClick={() => { setLoginError(''); setLoginMode('in'); }}>Customer sign in</button>
         </form>
+      </main>
+    );
+  }
+
+  if (needLogin) {
+    const titles = { in: 'Sign in', up: 'Create your account', forgot: 'Reset your password', reset: 'Set a new password' };
+    return (
+      <main className="wrap center">
+        <form className="card login" onSubmit={custSubmit}>
+          <h1>LeadReplyRadar</h1>
+          <p className="muted">{titles[loginMode]}</p>
+          {loginMode !== 'reset' && (
+            <input type="email" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} placeholder="Email" autoComplete="email" autoFocus required />
+          )}
+          {loginMode !== 'forgot' && (
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder={loginMode === 'in' ? 'Password' : 'New password (8+ characters)'}
+              autoComplete={loginMode === 'in' ? 'current-password' : 'new-password'}
+              required
+            />
+          )}
+          {loginError && <p className="error small">{loginError}</p>}
+          {loginNote && <p className="small" style={{ color: '#3ccf8e' }}>{loginNote}</p>}
+          <button className="btn btn-orange" type="submit">
+            {loginMode === 'in' ? 'Sign in' : loginMode === 'up' ? 'Create account' : loginMode === 'forgot' ? 'Send reset link' : 'Save password'}
+          </button>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'center', marginTop: 10 }}>
+            {loginMode !== 'in' && <button type="button" className="link small" onClick={() => { setLoginError(''); setLoginMode('in'); }}>Sign in</button>}
+            {loginMode !== 'up' && <button type="button" className="link small" onClick={() => { setLoginError(''); setLoginNote(''); setLoginMode('up'); }}>New here? Create an account</button>}
+            {loginMode === 'in' && <button type="button" className="link small" onClick={() => { setLoginError(''); setLoginNote(''); setLoginMode('forgot'); }}>Forgot password?</button>}
+          </div>
+          <p className="muted small" style={{ marginTop: 14 }}>Uses your CashCow account. Every plan starts with a 14-day free trial.</p>
+          <button type="button" className="link small" style={{ opacity: 0.6 }} onClick={() => { setLoginError(''); setPassword(''); setLoginMode('owner'); }}>Owner sign in</button>
+        </form>
+      </main>
+    );
+  }
+
+  if (custGate) {
+    return (
+      <main className="wrap">
+        <header className="topbar">
+          <div>
+            <h1>LeadReplyRadar</h1>
+            <span className="muted small">{custGate.email || ''}</span>
+          </div>
+          <button className="link small" onClick={logout}>Sign out</button>
+        </header>
+        {custGate.kind === 'plan' && (
+          <>
+            <div className="card">
+              <h2 style={{ marginTop: 0 }}>Pick a plan to start</h2>
+              <p className="small">Every plan begins with a 14-day free trial. Use <strong>{custGate.email}</strong> at checkout so the plan is linked to this account.</p>
+              <button className="btn btn-blue full" onClick={fetchMail}>I've subscribed, check again</button>
+              {custGate.message && <p className="muted small">{custGate.message}</p>}
+            </div>
+            <Plans email={custGate.email} />
+          </>
+        )}
+        {custGate.kind === 'connect' && <ConnectInbox onDone={fetchMail} />}
+        {custGate.kind === 'billing' && (
+          <div className="card">
+            <p>{custGate.message || "We couldn't check your plan just now."}</p>
+            <button className="btn btn-blue full" onClick={fetchMail}>Try again</button>
+          </div>
+        )}
       </main>
     );
   }
@@ -923,11 +1245,15 @@ export default function Home() {
           {data && data.mode === 'live' && (
             <button className="link small" onClick={logout}>Sign out</button>
           )}
-          <Plans />
+          {data && data.customer ? (
+            <CustomerBox customer={data.customer} onChanged={fetchMail} />
+          ) : (
+            <Plans />
+          )}
         </section>
       )}
 
-      {tab === 'tools' && (
+      {tab === 'tools' && !(data && data.customer) && (
         <section>
           <h2>More tools</h2>
           <AiAgent
@@ -967,7 +1293,7 @@ export default function Home() {
           ['inbox', 'Inbox', '✉'],
           ['analytics', 'Analytics', '▥'],
           ['alerts', 'Alerts', '🔔'],
-          ['tools', 'Tools', '▦'],
+          ...(data && data.customer ? [] : [['tools', 'Tools', '▦']]),
         ].map(([key, label, icon]) => (
           <button key={key} className={tab === key ? 'nav-on' : ''} onClick={() => (key === 'inbox' ? goInbox() : setTab(key))}>
             <span>{icon}</span>
