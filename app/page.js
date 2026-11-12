@@ -89,6 +89,31 @@ function beep(times = 1) {
   return true;
 }
 
+// ---------- subscription plans (Stripe checkout, 14-day free trial) ----------
+const PLANS = [
+  { name: 'Starter', price: 19, for: 'One inbox, solo agents and small businesses', url: 'https://buy.stripe.com/9B6eVfdiEfWxgNH4LDak003' },
+  { name: 'Pro', price: 29, for: 'Busy inboxes that need fast replies all day', url: 'https://buy.stripe.com/bJefZj6Ug6lX8hb7XPak004' },
+  { name: 'Business', price: 49, for: 'Teams and heavy email users', url: 'https://buy.stripe.com/5kQ28t3I4h0B40V5PHak005' },
+];
+function Plans() {
+  return (
+    <div className="card" id="plans" style={{ marginTop: 14 }}>
+      <h3 style={{ marginTop: 0 }}>Plans</h3>
+      <p className="muted small">Every plan starts with a 14-day free trial. Cancel any time before it ends and you won't be charged.</p>
+      {PLANS.map((p) => (
+        <div key={p.name} className="card" style={{ marginBottom: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <strong>{p.name}</strong>
+            <span><strong style={{ fontSize: 22 }}>${p.price}</strong><span className="muted small"> / month</span></span>
+          </div>
+          <p className="muted small" style={{ margin: '4px 0 10px' }}>{p.for}</p>
+          <a className="btn btn-blue full" href={p.url} target="_blank" rel="noopener noreferrer">Start free trial</a>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ---------- pieces ----------
 function Radar({ dots }) {
   return (
@@ -898,6 +923,7 @@ export default function Home() {
           {data && data.mode === 'live' && (
             <button className="link small" onClick={logout}>Sign out</button>
           )}
+          <Plans />
         </section>
       )}
 
