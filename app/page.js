@@ -67,26 +67,82 @@ function scoreClass(s) {
 }
 
 // ---------- sound ----------
+// Two ways to beep: Web Audio when the browser has it running, and a plain audio
+// clip as a backup (phones often keep Web Audio asleep until a full tap).
 let audioCtx = null;
 let beepVol = 0.6; // 0 = off, 0.25 = low, 0.6 = loud
-function beep(times = 1) {
-  if (!audioCtx) return false;
-  if (beepVol <= 0) return true;
-  if (audioCtx.state === 'suspended') audioCtx.resume();
+let beepUrl = null;
+
+function beepClip() {
+  if (beepUrl) return beepUrl;
+  // 4 short tones (880/660 Hz), 16-bit mono WAV made on the spot.
+  const rate = 22050, tone = 0.2, gap = 0.08, n = 4;
+  const total = Math.round(rate * (tone + gap) * n);
+  const buf = new ArrayBuffer(44 + total * 2), v = new DataView(buf);
+  const str = (o, t) => { for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+  str(0, 'RIFF'); v.setUint32(4, 36 + total * 2, true); str(8, 'WAVE'); str(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, rate, true);
+  v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); str(36, 'data'); v.setUint32(40, total * 2, true);
+  for (let i = 0; i < total; i++) {
+    const t = i / rate, k = Math.floor(t / (tone + gap)), local = t - k * (tone + gap);
+    let x = 0;
+    if (local < tone) {
+      const f = k % 2 ? 660 : 880, env = Math.min(1, local / 0.01, (tone - local) / 0.02);
+      x = (Math.sin(2 * Math.PI * f * t) > 0 ? 1 : -1) * 0.5 * env;
+    }
+    v.setInt16(44 + i * 2, Math.round(x * 32767), true);
+  }
+  let bin = '';
+  const bytes = new Uint8Array(buf);
+  for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
+  beepUrl = 'data:audio/wav;base64,' + btoa(bin);
+  return beepUrl;
+}
+
+function playClip() {
+  try {
+    const a = new Audio(beepClip());
+    a.volume = Math.max(0, Math.min(1, beepVol / 0.6));
+    const p = a.play();
+    if (p && p.catch) p.catch(() => {});
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function scheduleTones(times) {
+  const start = audioCtx.currentTime + 0.03;
   for (let i = 0; i < times; i++) {
-    const t = audioCtx.currentTime + i * 0.28;
+    const t = start + i * 0.28;
     const osc = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
     osc.type = 'square';
     osc.frequency.value = i % 2 ? 660 : 880;
     gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.exponentialRampToValueAtTime(beepVol, t + 0.02);
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.001, beepVol), t + 0.02);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
     osc.connect(gain).connect(audioCtx.destination);
     osc.start(t);
     osc.stop(t + 0.22);
   }
-  return true;
+}
+
+// Returns false only when the browser has not allowed sound yet (no tap on this page).
+function beep(times = 1) {
+  if (beepVol <= 0) return true;
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+  } catch (e) {}
+  if (audioCtx && audioCtx.state === 'running') {
+    scheduleTones(times);
+    return true;
+  }
+  // Web Audio is asleep: try to wake it, and use the audio clip meanwhile.
+  if (audioCtx) Promise.resolve(audioCtx.resume()).catch(() => {});
+  const played = playClip();
+  const allowed = typeof navigator !== 'undefined' && navigator.userActivation ? navigator.userActivation.hasBeenActive : played;
+  return Boolean(allowed);
 }
 
 // ---------- subscription plans (Stripe checkout, 14-day free trial) ----------
@@ -610,9 +666,8 @@ export default function Home() {
     beepVol = next;
     updateSettings({ volume: next });
     try {
-      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
       setSoundOn(true);
-      Promise.resolve(audioCtx.resume()).then(() => beep(1)).catch(() => beep(1));
+      beep(1); // inside the tap, so the phone allows it
     } catch (e) {}
   };
 
@@ -714,9 +769,8 @@ export default function Home() {
 
   const turnOnSound = () => {
     try {
-      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
       setSoundOn(true);
-      Promise.resolve(audioCtx.resume()).then(() => beep(1)).catch(() => beep(1));
+      beep(1); // inside the tap, so the phone allows it
     } catch (e) {}
   };
 
@@ -727,7 +781,8 @@ export default function Home() {
     const unlock = () => {
       try {
         audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-        if (audioCtx.state !== 'running') audioCtx.resume();
+        if (audioCtx.state !== 'running') Promise.resolve(audioCtx.resume()).catch(() => {});
+        beepClip();
         setSoundOn(true);
       } catch (e) {}
     };
@@ -736,14 +791,16 @@ export default function Home() {
         audioCtx.resume().catch(() => {});
       }
     };
-    window.addEventListener('pointerdown', unlock, true);
+    window.addEventListener('pointerup', unlock, true);
     window.addEventListener('keydown', unlock, true);
-    window.addEventListener('touchstart', unlock, true);
+    window.addEventListener('touchend', unlock, true);
+    window.addEventListener('click', unlock, true);
     document.addEventListener('visibilitychange', wake);
     return () => {
-      window.removeEventListener('pointerdown', unlock, true);
+      window.removeEventListener('pointerup', unlock, true);
       window.removeEventListener('keydown', unlock, true);
-      window.removeEventListener('touchstart', unlock, true);
+      window.removeEventListener('touchend', unlock, true);
+      window.removeEventListener('click', unlock, true);
       document.removeEventListener('visibilitychange', wake);
     };
   }, []);
@@ -1235,7 +1292,7 @@ export default function Home() {
             <Toggle label="SMS alerts" soon />
             <Toggle label="Call alerts" soon />
           </div>
-          <button className="btn btn-blue full" onClick={() => (soundOn ? beep(3) : turnOnSound())}>
+          <button className="btn btn-blue full" onClick={() => { setSoundOn(true); beep(4); }}>
             Send test alert
           </button>
           <p className="muted small">
